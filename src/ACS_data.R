@@ -4,7 +4,7 @@ library(dplyr)
 library(purrr)
 
 # Set your API key
-# census_api_key("8ad6189aea3b7a7a8dc17a87aa65c8559e10ef07", install = TRUE, overwrite = TRUE)  # replace 'your_key_here' with your actual API key
+# census_api_key("Your Key Here", install = TRUE, overwrite = TRUE)  # replace 'your_key_here' with your actual API key
 
 # Variables of interest with ACS code
 setwd('/Users/babak.jfard/projects/NASA_IMERG_Respiratory/')
