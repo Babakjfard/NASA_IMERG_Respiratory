@@ -1,7 +1,8 @@
 library(tidycensus)
-library(tidyr)
+library(tidyverse)
 library(dplyr)
 library(purrr)
+library(broom)
 
 # Set your API key
 # census_api_key("Your Key Here", install = TRUE, overwrite = TRUE)  # replace 'your_key_here' with your actual API key
@@ -21,7 +22,8 @@ vars <- c( # For 2011 -2019
 )
 
 
-# Years to retrieve data for (ACS 1-year data available from 2005 onwards)
+
+# Years to retrieve data for (ACS 5-year data available from 2005 onwards)
 years <- 2009:2021
 # Function to get ACS data for a given year
 states = c('CA', 'GA', 'OR', 'SC')
@@ -40,6 +42,9 @@ for (state in states){
   
   # Retrieve data for all years using map_df to combine into a single data frame
   all_years_data <- map_df(years, get_acs_data_for_year)
+  
+  # Changing the year into the center of the 5-year estimate
+  all_years_data$year <- all_years_data$year - 2
   
   print(paste(">>>>>>>>>>> The State is:", state))
   print(head(all_years_data))
@@ -61,9 +66,34 @@ for (state in states){
                                        Education = (rowSums(across(B15002_003:B15002_010))+
                                                       rowSums(across(B15002_020:B15002_027)))/
                                                       (B15002_002+B15002_019)) %>%
-    select(c(Poverty, Food_STAMP, Education))
+    select(c(year, GEOID, Poverty, Food_STAMP, Education))
   
-  colSums(is.na(final_acs))
+  
+  # linear regressions to later impute missing years
+  fit_p <- list()
+  fit_f <- list()
+  fit_e <- list()
+  
+  for (county in unique(final_acs$GEOID)){
+    lm_data <- final_acs %>% filter(GEOID == county)
+    
+    fit_p[[county]] <- lm(Poverty ~ year, data = lm_data)
+    fit_f[[county]] <- lm(Food_STAMP ~ year, data = lm_data)
+    fit_e[[county]] <- lm(Education ~ year, data = lm_data)
+    
+  }
+
+  # Adding the required years
+  final_acs <- bind_rows(expand_grid(year=2003:2006, GEOID=unique(final_acs$GEOID)), final_acs)
+  
+  final_acs <- final_acs %>% 
+    rowwise() %>% 
+    mutate(Poverty = ifelse(is.na(Poverty), fit_p[[GEOID]]$coefficients[2]* year +fit_p[[GEOID]]$coefficients[1], Poverty),
+           Food_STAMP = ifelse(is.na(Food_STAMP), fit_f[[GEOID]]$coefficients[2]* year +fit_f[[GEOID]]$coefficients[1], Food_STAMP),
+           Education = ifelse(is.na(Education), fit_e[[GEOID]]$coefficients[2]* year +fit_e[[GEOID]]$coefficients[1], Education)) %>% 
+    ungroup()
+
+  print(colSums(is.na(final_acs)))
   write_csv(final_acs, paste0('Data/interim/', state,"_acs5.csv"))
 }
 
